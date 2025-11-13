@@ -9,6 +9,7 @@ ENV GOPROXY=direct
 ENV GOSUMDB=off
 COPY . /broadcast-box
 RUN apk add git
+RUN go mod tidy
 RUN go build
 
 FROM golang:alpine

@@ -12,6 +12,43 @@ interface PlayerProps {
 	onCloseStream?: () => void;
 }
 
+// Cross-browser fullscreen helper function with auto-rotate
+const requestFullscreen = async (element: HTMLVideoElement) => {
+	try {
+		// Request screen orientation lock to landscape when entering fullscreen
+		if ('orientation' in screen && 'lock' in (screen.orientation as any)) {
+			try {
+				// Lock to landscape orientation for best viewing experience
+				await (screen.orientation as any).lock('landscape').catch(() => {
+					// Orientation lock might not be supported or allowed, that's okay
+					console.log('Screen orientation lock not available');
+				});
+			} catch (e) {
+				// Silently fail if orientation lock is not supported
+			}
+		}
+
+		// Request fullscreen with appropriate API
+		if (element.requestFullscreen) {
+			await element.requestFullscreen();
+		} else if ((element as any).webkitEnterFullscreen) {
+			// iOS Safari inline video fullscreen
+			(element as any).webkitEnterFullscreen();
+		} else if ((element as any).webkitRequestFullscreen) {
+			// Safari
+			await (element as any).webkitRequestFullscreen();
+		} else if ((element as any).mozRequestFullScreen) {
+			// Firefox
+			await (element as any).mozRequestFullScreen();
+		} else if ((element as any).msRequestFullscreen) {
+			// IE/Edge
+			await (element as any).msRequestFullscreen();
+		}
+	} catch (err) {
+		console.error("VideoPlayer_RequestFullscreen", err);
+	}
+};
+
 const Player = (props: PlayerProps) => {
 	const apiPath = import.meta.env.VITE_API_PATH;
 	const {streamKey, cinemaMode} = props;
@@ -62,8 +99,9 @@ const Player = (props: PlayerProps) => {
 	const handleVideoPlayerDoubleClick = () => {
 		clearTimeout(clickTimeoutRef.current);
 		lastClickTimeRef.current = 0;
-		videoRef.current?.requestFullscreen()
-			.catch(err => console.error("VideoPlayer_RequestFullscreen", err));
+		if (videoRef.current) {
+			requestFullscreen(videoRef.current);
+		}
 	};
 	
 	useEffect(() => {
@@ -74,11 +112,40 @@ const Player = (props: PlayerProps) => {
 
 		const handleOverlayTimer = (isVisible: boolean) => resetTimer(isVisible);
 		const player = document.getElementById(streamVideoPlayerId)
-		
+
+		// Handle fullscreen change to unlock orientation when exiting
+		const handleFullscreenChange = () => {
+			const isFullscreen = document.fullscreenElement ||
+			                     (document as any).webkitFullscreenElement ||
+			                     (document as any).mozFullScreenElement ||
+			                     (document as any).msFullscreenElement;
+
+			// When exiting fullscreen, unlock orientation
+			if (!isFullscreen && 'orientation' in screen && 'unlock' in (screen.orientation as any)) {
+				try {
+					(screen.orientation as any).unlock();
+				} catch (e) {
+					// Silently fail if unlock is not supported
+				}
+			}
+		};
+
+		// Mouse events for desktop
 		player?.addEventListener('mousemove', () => handleOverlayTimer(true))
 		player?.addEventListener('mouseenter', () => handleOverlayTimer(true))
 		player?.addEventListener('mouseleave', () => handleOverlayTimer(false))
 		player?.addEventListener('mouseup', () => handleOverlayTimer(true))
+
+		// Touch events for mobile
+		player?.addEventListener('touchstart', () => handleOverlayTimer(true))
+		player?.addEventListener('touchmove', () => handleOverlayTimer(true))
+		player?.addEventListener('touchend', () => handleOverlayTimer(true))
+
+		// Fullscreen change events
+		document.addEventListener('fullscreenchange', handleFullscreenChange)
+		document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+		document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+		document.addEventListener('msfullscreenchange', handleFullscreenChange)
 
 		window.addEventListener("beforeunload", handleWindowBeforeUnload)
 
@@ -87,7 +154,7 @@ const Player = (props: PlayerProps) => {
 		return () => {
 			peerConnectionRef.current?.close()
 			peerConnectionRef.current = null
-			
+
 			videoRef.current?.removeEventListener("playing", setHasSignalHandler)
 
 			player?.removeEventListener('mouseenter', () => handleOverlayTimer)
@@ -95,8 +162,17 @@ const Player = (props: PlayerProps) => {
 			player?.removeEventListener('mousemove', () => handleOverlayTimer)
 			player?.removeEventListener('mouseup', () => handleOverlayTimer)
 
+			player?.removeEventListener('touchstart', () => handleOverlayTimer)
+			player?.removeEventListener('touchmove', () => handleOverlayTimer)
+			player?.removeEventListener('touchend', () => handleOverlayTimer)
+
+			document.removeEventListener('fullscreenchange', handleFullscreenChange)
+			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+			document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+			document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+
 			window.removeEventListener("beforeunload", handleWindowBeforeUnload)
-			
+
 			clearTimeout(videoOverlayVisibleTimeoutRef.current)
 		}
 	}, [])
@@ -231,10 +307,10 @@ const Player = (props: PlayerProps) => {
 
 				{/*Buttons */}
 				{videoRef.current !== null && (
-					<div className="absolute bottom-0 h-8 w-full flex place-items-end z-20">
+					<div className="absolute bottom-0 h-11 md:h-8 w-full flex place-items-end z-20">
 						<div
 							onClick={(e) => e.stopPropagation()}
-							className="bg-blue-950 w-full flex flex-row gap-2 h-1/14 rounded-b-md p-1 max-h-8 min-h-8">
+							className="bg-blue-950 w-full flex flex-row gap-2 h-1/14 rounded-b-md p-1 max-h-11 min-h-11 md:max-h-8 md:min-h-8">
 
 							<PlayPauseComponent videoRef={videoRef}/>
 
@@ -249,7 +325,7 @@ const Player = (props: PlayerProps) => {
 							{hasSignal && <CurrentViewersComponent streamKey={streamKey}/>}
 							<QualitySelectorComponent layers={videoLayers} layerEndpoint={layerEndpointRef.current} hasPacketLoss={hasPacketLoss}/>
 							<Square2StackIcon onClick={() => videoRef.current?.requestPictureInPicture()}/>
-							<ArrowsPointingOutIcon onClick={() => videoRef.current?.requestFullscreen()}/>
+							<ArrowsPointingOutIcon onClick={() => videoRef.current && requestFullscreen(videoRef.current)}/>
 
 						</div>
 					</div>)}

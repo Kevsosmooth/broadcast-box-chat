@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glimesh/broadcast-box/internal/chat"
 	"github.com/glimesh/broadcast-box/internal/networktest"
 	"github.com/glimesh/broadcast-box/internal/webhook"
 	"github.com/glimesh/broadcast-box/internal/webrtc"
@@ -254,6 +255,16 @@ func main() {
 
 	webrtc.Configure()
 
+	// Initialize chat system
+	chatConfig := chat.LoadFromEnv()
+	chatManager := chat.NewManager(chatConfig)
+	rateLimiter := chat.NewRateLimiter(chatConfig)
+	chatWSHandler := chat.NewWSHandler(chatManager, rateLimiter)
+
+	log.Printf("Chat system initialized with %d MB memory limit", chatConfig.MaxTotalMemoryMB)
+	capacity := chatConfig.CalculateCapacity()
+	log.Printf("Chat capacity: ~%v streams, ~%v total messages", capacity["estimated_max_streams"], capacity["total_message_capacity"])
+
 	if os.Getenv("NETWORK_TEST_ON_START") == "true" {
 		fmt.Println(networkTestIntroMessage) //nolint
 
@@ -297,6 +308,13 @@ func main() {
 	mux.HandleFunc("/api/sse/", corsHandler(whepServerSentEventsHandler))
 	mux.HandleFunc("/api/layer/", corsHandler(whepLayerHandler))
 	mux.HandleFunc("/api/status", corsHandler(statusHandler))
+
+	// Chat endpoints
+	mux.HandleFunc("/api/chat", corsHandler(chatWSHandler.HTTPHandler))
+	mux.HandleFunc("/api/chat/stats", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(chatManager.GetStats())
+	}))
 
 	server := &http.Server{
 		Handler: mux,

@@ -10,12 +10,18 @@ interface VolumeComponentProps {
 const VolumeComponent = (props: VolumeComponentProps) => {
 	const [isMuted, setIsMuted] = useState<boolean>(props.isMuted);
 	const [showSlider, setShowSlider] = useState<boolean>(false);
+	const [isTouchDevice, setIsTouchDevice] = useState<boolean>(false);
 	const volumeRef = useRef<number>(20);
-	
+
+	useEffect(() => {
+		// Detect if device supports touch
+		setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+	}, []);
+
 	useEffect(() => {
 		props.onStateChanged(isMuted);
 	}, [isMuted]);
-	
+
 	const onVolumeChange = (newValue: number) => {
 		if(isMuted && newValue !== 0){
 			setIsMuted((_) => false)
@@ -23,13 +29,14 @@ const VolumeComponent = (props: VolumeComponentProps) => {
 		if(!isMuted && newValue === 0){
 			setIsMuted((_) => true)
 		}
-		
+
 		props.onVolumeChanged(newValue / 100);
 	}
 
 	return <div
 		onMouseEnter={() => setShowSlider(true)}
 		onMouseLeave={() => setShowSlider(false)}
+		onTouchStart={() => setShowSlider(true)}
 		className="flex justify-start max-w-42 gap-2 items-center"
 	>
 		{isMuted && (
@@ -46,9 +53,9 @@ const VolumeComponent = (props: VolumeComponentProps) => {
 			onChange={(event) => onVolumeChange(parseInt(event.target.value))}
 			className={
 				`
-					${!showSlider && `
+					${!showSlider && !isTouchDevice && `
 						invisible
-					`} 
+					`}
 				w-18 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700`}/>
 	</div>
 }
